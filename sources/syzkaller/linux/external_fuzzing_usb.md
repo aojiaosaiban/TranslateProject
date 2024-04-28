@@ -1,9 +1,10 @@
 ---
-status: collected
+status: translating
 title: "Internals"
 author: Syzkaller Community
 collector: jxlpzqc
 collected_date: 20240314
+translator: aojiaosaiban
 link: https://github.com/google/syzkaller/blob/master/docs/linux/external_fuzzing_usb.md
 ---
 
