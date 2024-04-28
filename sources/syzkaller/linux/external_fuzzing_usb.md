@@ -8,42 +8,42 @@ translator: aojiaosaiban
 link: https://github.com/google/syzkaller/blob/master/docs/linux/external_fuzzing_usb.md
 ---
 
-External USB fuzzing for Linux kernel
+适用于Linux内核的USB外部模糊测试
 =====================================
 
-Syzkaller supports fuzzing the Linux kernel USB subsystem externally (as can be done by plugging in a programmable USB device like [Facedancer](https://github.com/usb-tools/Facedancer)). This allowed finding over [300 bugs](/docs/linux/found_bugs_usb.md) in the Linux kernel USB stack so far.
+Syzkaller支持对Linux内核的USB子系统进行外部模糊测试 (例如，通过插入类似[Facedancer](https://github.com/usb-tools/Facedancer)这样的可编程USB设备). This allowed finding over   in the Linux kernel USB stack so far.到目前为止，这已经在Linux内核的USB堆栈发现了超过 [300 bugs](/docs/linux/found_bugs_usb.md) 
 
-USB fuzzing support consists of 3 parts:
+USB模糊测试支持由以下3个部分组成：
 
-1. Syzkaller changes; see the [Internals](/docs/linux/external_fuzzing_usb.md#Internals) section for details.
-2. Kernel interface for USB device emulation called [Raw Gadget](https://github.com/xairy/raw-gadget), which is now in the mainline kernel.
-3. KCOV changes that allow to collect coverage from background kernel threads and interrupts, which are now in the mainline kernel.
+1. Syzkaller的更改；详细信息请参阅[Internals](/docs/linux/external_fuzzing_usb.md#Internals)部分。
+2. 用于USB设备仿真的内核接口，称为[Raw Gadget](https://github.com/xairy/raw-gadget)，现已合并到主线内核。
+3. 允许从后台内核线程和中断中收集覆盖率的KCOV更改，现已合并到主线内核中。
 
-See the OffensiveCon 2019 [Coverage-Guided USB Fuzzing with Syzkaller](https://docs.google.com/presentation/d/1z-giB9kom17Lk21YEjmceiNUVYeI6yIaG5_gZ3vKC-M/edit?usp=sharing) talk ([video](https://www.youtube.com/watch?v=1MD5JV6LfxA)) for some (partially outdated) details.
+查看OffensiveCon 2019[Coverage-Guided USB Fuzzing with Syzkaller](https://docs.google.com/presentation/d/1z-giB9kom17Lk21YEjmceiNUVYeI6yIaG5_gZ3vKC-M/edit?usp=sharing) talk ([video](https://www.youtube.com/watch?v=1MD5JV6LfxA))，了解一些（部分已过时的）细节
 
-As USB fuzzing requires kernel side support, for non-mainline kernels you need all mainline patches that touch `drivers/usb/gadget/udc/dummy_hcd.c`, `drivers/usb/gadget/legacy/raw_gadget.c` and `kernel/kcov.c`.
+由于USB模糊测试需要内核端支持，对于非主线内核，您需要所有涉及`drivers/usb/gadget/udc/dummy_hcd.c`, `drivers/usb/gadget/legacy/raw_gadget.c` 和 `kernel/kcov.c`的主线补丁。
 
 
-## Internals
+## 内部结构
 
-Currently, syzkaller defines 6 USB pseudo-syscalls (see [syzlang descriptions](/sys/linux/vusb.txt) and [pseudo-syscalls](/executor/common_usb.h) [implementation](/executor/common_usb_linux.h), which relies on the Raw Gadget interface linked above):
+目前，syzkaller定义了6个USB伪系统调用（参见[syzlang descriptions](/sys/linux/vusb.txt)和[pseudo-syscalls](/executor/common_usb.h) [implementation](/executor/common_usb_linux.h)，它依赖于上面链接的Raw Gadget接口）：
 
-1. `syz_usb_connect` - connects a USB device. Handles all requests to the control endpoint until a `SET_CONFIGURATION` request is received.
-2. `syz_usb_connect_ath9k` - connects an `ath9k` USB device. Compared to `syz_usb_connect`, this syscall also handles firmware download requests that happen after `SET_CONFIGURATION` for the `ath9k` driver.
-3. `syz_usb_disconnect` - disconnects a USB device.
-4. `syz_usb_control_io` - sends or receives a control message over endpoint 0.
-5. `syz_usb_ep_write` - sends a message to a non-control endpoint.
-6. `syz_usb_ep_read` - receives a message from a non-control endpoint.
+1. `syz_usb_connect` - 连接一个USB设备。处理所有对控制端点的请求，直到收到`SET_CONFIGURATION`请求。
+2. `syz_usb_connect_ath9k` - 连接一个`ath9k`USB设备。与`syz_usb_connect`相比，此系统调用还处理了在`ath9k`驱动程序的`SET_CONFIGURATION`之后发生的固件下载请求。
+3. `syz_usb_disconnect` - 断开一个USB设备的连接。
+4. `syz_usb_control_io` - 在端点0上发送或接收控制消息。
+5. `syz_usb_ep_write` - 向非控制端点发送消息。
+6. `syz_usb_ep_read` - 从非控制端点接收消息
 
-These pseudo-syscalls targeted at a few different layers:
+这些伪系统调用针对几个不同的层次：
 
-1. USB core enumeration process is targeted by the generic `syz_usb_connect` variant. As the USB device descriptor fields for this pseudo-syscall get [patched](/sys/linux/init_vusb.go) by syzkaller runtime, `syz_usb_connect` also briefly targets the enumeration process of various USB drivers.
-2. Enumeration process for class-specific drivers is targeted by `syz_usb_connect$hid`, `syz_usb_connect$cdc_ecm`, etc. (the device descriptors provided to them have fixed identifying USB IDs to always match to the same USB class driver) accompanied by matching `syz_usb_control_io$*` pseudo-syscalls.
-3. Subsequent communication through non-control endpoints for class-specific drivers is not targeted by existing descriptions yet for any of the supported classes. But it can be triggered through generic `syz_usb_ep_write` and `syz_usb_ep_read` pseudo-syscalls.
-4. Enumeration process for device-specific drivers is not covered by existing descriptions yet.
-5. Subsequent communication through non-control endpoints for device-specific drivers is partially described only for `ath9k` driver via `syz_usb_connect_ath9k`, `syz_usb_ep_write$ath9k_ep1` and `syz_usb_ep_write$ath9k_ep2` pseudo-syscalls.
+1. USB核心枚举过程被通用的`syz_usb_connect`变体所针对。由于这个伪系统调用的USB设备描述符字段被syzkaller运行时修补，因此`syz_usb_connect`还会简要地针对各种USB驱动程序的枚举过程。
+2. 针对特定类驱动程序的枚举过程由`syz_usb_connect$hid`、`syz_usb_connect$cdc_ecm`等（提供给它们的设备描述符具有固定的标识USB ID，以始终匹配相同的USB类驱动程序）以及匹配的`syz_usb_control_io$*`伪系统调用来针对。
+3. 对于支持的任何支持的类，目前还没有针对特定类驱动程序通过非控制端点进行的后续通信的现有描述。但是可以通过通用的`syz_usb_ep_write`和`syz_usb_ep_read`伪系统调用来触发。
+4. 目前还没有现有描述覆盖的特定设备驱动程序的枚举过程。
+5. 仅针对`ath9k`驱动程序部分描述了通过非控制端点进行的特定设备驱动程序的后续通信，通过`syz_usb_connect_ath9k`、`syz_usb_ep_write$ath9k_ep1`和`syz_usb_ep_write$ath9k_ep2`伪系统调用。
 
-There are [runtests](/sys/linux/test/) for USB pseudo-syscalls. They are named starting with the `vusb` prefix and can be run with:
+有关USB伪系统调用的运行测试[runtests](/sys/linux/test/)以`vusb`前缀命名，并且可以使用以下命令运行：
 
 ```
 ./bin/syz-runtest -config=usb-manager.cfg -tests=vusb
