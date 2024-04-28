@@ -50,48 +50,49 @@ USB模糊测试支持由以下3个部分组成：
 ```
 
 
-## Things to improve
+## 待改进方向
 
-The core support for USB fuzzing is in place, but there's still a place for improvements:
+USB模糊测试的核心支持已经就位，但仍然有改善空间：
 
-1. Remove the device from `usb_devices` in `syz_usb_disconnect` and don't call `lookup_usb_index` multiple times within `syz_usb_connect`. Currently, this causes some reproducers to have the `repeat` flag set when it's not required.
+1. 在`syz_usb_disconnect`中移除`usb_devices`中的设备，并且在`syz_usb_connect`中不要多次调用`lookup_usb_index`。目前，这会导致一些生成器在不需要时设置`repeat`标志
 
-2. Add descriptions for more relevant USB classes and drivers.
+2. 为更多相关的USB类别和驱动程序添加描述.
 
-3. Resolve TODOs from [sys/linux/vusb.txt](/sys/linux/vusb.txt).
+3. 解决[sys/linux/vusb.txt](/sys/linux/vusb.txt)中的待办事项.
 
-4. Implement a proper way for dynamically extracting relevant USB ids from the kernel (a related [discussion](https://www.spinics.net/lists/linux-usb/msg187915.html)).
+4. 实现一种适当的方式来动态提取内核中相关的USB id（参考[discussion](https://www.spinics.net/lists/linux-usb/msg187915.html)）。
 
-5. Add a mode for standalone fuzzing of physical USB hosts (by using Raspberry Pi Zero, see below).
-This includes at least: a. making sure that current USB emulation implementation works properly on different OSes (there are some [differences](https://github.com/RoganDawes/LOGITacker/blob/USB_host_enum/fingerprint_os.md#derive-the-os-from-the-fingerprint) in protocol implementation);
-b. using USB requests coming from the host as a signal (like coverage) to enable "signal-driven" fuzzing,
-c. making UDC driver name configurable for `syz-execprog` and `syz-prog2c`.
+5. 添加一个用于独立模拟物理USB主机的模式（例如使用树莓派Zero）。
+这至少包括：
+a. 确保当前的USB模拟实现在不同的操作系统上正常工作（协议实现中存在一些差异）；
+b. 使用来自主机的USB请求作为信号（如覆盖率）以启用“信号驱动”模糊测试，
+c. 使UDC驱动程序名称可配置为`syz-execprog`和`syz-prog2c`。
 
-6. Generate syzkaller programs from usbmon trace that is produced by actual USB devices (this should make the fuzzer to go significantly deeper into the USB drivers code).
-
-
-## Setting up
-
-1. Make sure the version of the kernel you're using is at least 5.7. It's recommended to backport all kernel patches that touch kcov, USB Raw Gadget, and USB Dummy UDC/HCD.
-
-2. Configure the kernel: at the very least, `CONFIG_USB_RAW_GADGET=y` and `CONFIG_USB_DUMMY_HCD=y` must be enabled.
-
-    The easiest option is to use the [config](/dashboard/config/linux/upstream-usb.config) from the syzbot USB fuzzing instance.
-
-3. Build the kernel.
-
-4. Optionally update syzkaller descriptions by extracting USB IDs using the [instructions](/docs/linux/external_fuzzing_usb.md#updating-syzkaller-usb-ids) below.
-
-5. Enable `syz_usb_connect`, `syz_usb_disconnect`, `syz_usb_control_io`, `syz_usb_ep_write` and `syz_usb_ep_read` pseudo-syscalls in the manager config.
-
-6. Set `sandbox` to `none` in the manager config.
-
-7. Pass `dummy_hcd.num=8` (or whatever number you use for `procs`) to the kernel command line in the manager config.
-
-8. Run.
+6. 从由实际USB设备产生的usbmon跟踪中生成syzkaller程序（这应该使模糊测试器能够更深入地进入USB驱动程序代码）。
 
 
-## Updating syzkaller USB IDs
+## 部署
+
+1. 确保你使用的内核版本至少是 5.7。建议将所有涉及到 kcove、USB Raw Gadget 和 USB Dummy UDC/HCD 的内核补丁回溯到对应版本。
+
+2. 配置内核：至少要启用 `CONFIG_USB_RAW_GADGET=y` 和 `CONFIG_USB_DUMMY_HCD=y`。
+
+    最简单的方法是使用 syzbot USB 模糊测试实例中的[config](/dashboard/config/linux/upstream-usb.config)
+
+3. 编译内核
+
+4. 可选地，根据下面的说明[instructions](/docs/linux/external_fuzzing_usb.md#updating-syzkaller-usb-ids)提取 USB IDs，并更新 syzkaller 的描述。
+
+5. 在管理器配置中启用 `syz_usb_connect`、`syz_usb_disconnect`、`syz_usb_control_io`、`syz_usb_ep_write` 和 `syz_usb_ep_read` 伪系统调用。
+
+6. 在管理器配置中将 `sandbox` 设置为 `none`。
+
+7. 在管理器配置中的内核命令行中传递 `dummy_hcd.num=8`（或者你用于 `procs` 的任何数字）。
+
+8. 运行
+
+
+## 更新 syzkaller USB IDs
 
 Syzkaller uses a list of hardcoded [USB IDs](/sys/linux/init_vusb_ids.go) that are [patched](/sys/linux/init_vusb.go) into `syz_usb_connect` by syzkaller runtime. One of the ways to make syzkaller target only particular USB drivers is to alter that list. The instructions below describe a hackish way to generate syzkaller USB IDs for all USB drivers enabled in your `.config`.
 
